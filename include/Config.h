@@ -16,7 +16,6 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <optional>
 #include <string>
 #include <variant>
 
@@ -49,9 +48,6 @@ struct Config {
 
   /// Do we prune expressions on hot paths?
   bool pruning = false;
-
-  /// The random seed to feed the Z3 solver with.
-  std::optional<size_t> randomSeed = std::nullopt;
 
   /// The AFL coverage map to initialize with.
   ///
