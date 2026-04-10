@@ -12,47 +12,34 @@
 # You should have received a copy of the GNU General Public License along with
 # SymCC. If not, see <https://www.gnu.org/licenses/>.
 
-# Create both static and shared libraries with SymQEMU-compatible names
-add_library(SymCCRtObj OBJECT
+# Build the C++ wrapper that bridges _sym_* calls to _rsym_* (Rust runtime).
+# The _rsym_* symbols are provided by LibAFL's symcc_runtime crate at final
+# link time, so they remain unresolved in these libraries.
+
+add_library(SymCCRtStatic STATIC
   ${SHARED_RUNTIME_SOURCES}
   Runtime.cpp)
 
-set_property(TARGET SymCCRtObj PROPERTY POSITION_INDEPENDENT_CODE 1)
-
-add_library(SymCCRtShared SHARED $<TARGET_OBJECTS:SymCCRtObj>)
-add_library(SymCCRtStatic STATIC $<TARGET_OBJECTS:SymCCRtObj>)
-
-# Also create SymRuntime alias for compatibility
-add_library(SymRuntime ALIAS SymCCRtStatic)
-
-target_include_directories(SymCCRtObj PRIVATE
+target_include_directories(SymCCRtStatic PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
-set_target_properties(SymCCRtObj PROPERTIES COMPILE_FLAGS "-Werror")
+set_target_properties(SymCCRtStatic PROPERTIES COMPILE_FLAGS "-Werror")
 
-# Link with LibAFL's Rust runtime which provides the _rsym_* functions
-# The rust_backend is just a C++ wrapper, the actual implementation is in Rust
-# User must provide LIBAFL_RUNTIME_DIR pointing to the directory containing libSymRuntime.so
-if(DEFINED ENV{LIBAFL_RUNTIME_DIR})
-  message(STATUS "Linking rust_backend with LibAFL runtime from: $ENV{LIBAFL_RUNTIME_DIR}")
-  set(LIBAFL_SYMRUNTIME_PATH "$ENV{LIBAFL_RUNTIME_DIR}/libSymRuntime.so")
-  if(EXISTS "${LIBAFL_SYMRUNTIME_PATH}")
-    message(STATUS "Found LibAFL runtime: ${LIBAFL_SYMRUNTIME_PATH}")
-    # Use link options instead of target_link_libraries to pass the full .so path
-    # This prevents Meson from trying to add -lSymRuntime
-    target_link_options(SymCCRtShared PRIVATE "${LIBAFL_SYMRUNTIME_PATH}")
-    # Also need to set RPATH so the library can be found at runtime
-    set_target_properties(SymCCRtShared PROPERTIES 
-      BUILD_RPATH "$ENV{LIBAFL_RUNTIME_DIR}"
-      INSTALL_RPATH "$ENV{LIBAFL_RUNTIME_DIR}")
-  else()
-    message(FATAL_ERROR "LibAFL runtime not found at: ${LIBAFL_SYMRUNTIME_PATH}")
-  endif()
-  # Note: SymCCRtStatic cannot link with the dynamic Rust runtime
-  # It's provided for compatibility but won't work without manual linking
-else()
-  message(FATAL_ERROR "LIBAFL_RUNTIME_DIR not set. You must build LibAFL's runtime and set this env var. Example: export LIBAFL_RUNTIME_DIR=/path/to/runtime/target/release")
-endif()
+# Shared variant (optional, for non-static linking)
+add_library(SymCCRtShared SHARED
+  ${SHARED_RUNTIME_SOURCES}
+  Runtime.cpp)
 
-INSTALL(TARGETS SymCCRtShared SymCCRtStatic)
+target_include_directories(SymCCRtShared PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/..)
+
+# Allow unresolved _rsym_* symbols in the shared library
+target_link_options(SymCCRtShared PRIVATE
+  "LINKER:--unresolved-symbols=ignore-in-object-files")
+
+# Backward-compatible alias
+add_library(SymRuntime ALIAS SymCCRtStatic)
+
+INSTALL(TARGETS SymCCRtStatic SymCCRtShared)
